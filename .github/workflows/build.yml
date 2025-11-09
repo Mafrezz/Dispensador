@@ -6,13 +6,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Build with Buildozer
-        uses: kivy/buildozer-action@master
+        uses: ArtemSBulgakov/buildozer-action@v1
+        env:
+          USER: root            # evita el error de chown 'user'
         with:
+          workdir: .            # tu buildozer.spec está en la raíz
           command: buildozer -v android debug
+          buildozer_version: stable
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
