@@ -6,16 +6,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Acción mantenida y muy estable para Buildozer
       - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
+        uses: kivy/buildozer-action@master
         with:
-          workdir: .
           command: buildozer -v android debug
 
       - name: Upload APK
