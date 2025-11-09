@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+    # puedes dejar ubuntu-latest; si te da guerra, usa ubuntu-22.04
     runs-on: ubuntu-latest
 
     steps:
@@ -14,9 +15,10 @@ jobs:
       - name: Build with Buildozer
         uses: ArtemSBulgakov/buildozer-action@v1
         env:
-          USER: root            # evita el error de chown 'user'
+          USER: root
+          PIP_BREAK_SYSTEM_PACKAGES: "1"   # <-- evita el error PEP 668
         with:
-          workdir: .            # tu buildozer.spec está en la raíz
+          workdir: .
           command: buildozer -v android debug
           buildozer_version: stable
 
