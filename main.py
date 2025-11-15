@@ -4,7 +4,7 @@ os.environ["KIVY_METRICS_DENSITY"] = "2.0"   # escala moderada; ajusta 2.4–3.0
 # os.environ["KIVY_DPI"] = "420"            # opcional
 
 from kivy.core.window import Window
-Window.size = (360, 750)                    # alto que cabe en tu screenshot
+Window.size = (360, 750)                    # alto que cabe en tu pantalla de PC
 # --- fin simulación ---
 
 from kivy.config import Config
@@ -13,6 +13,7 @@ Config.set('kivy', 'log_level', 'info')
 from kivy.lang import Builder
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.properties import StringProperty
 
 from kivymd.app import MDApp
 from kivymd.uix.menu import MDDropdownMenu
@@ -50,8 +51,16 @@ class FoodForm(MDBoxLayout):
         self.app = app
         self.food = food
         self.name = MDTextField(hint_text="Nombre", text=food[1] if food else "")
-        self.gpp = MDTextField(hint_text="Gramos por porción", text=str(food[2]) if food else "100", input_filter="float")
-        self.cpp = MDTextField(hint_text="Calorías por porción", text=str(food[3]) if food else "100", input_filter="float")
+        self.gpp = MDTextField(
+            hint_text="Gramos por porción",
+            text=str(food[2]) if food else "100",
+            input_filter="float",
+        )
+        self.cpp = MDTextField(
+            hint_text="Calorías por porción",
+            text=str(food[3]) if food else "100",
+            input_filter="float",
+        )
         self.add_widget(self.name)
         self.add_widget(self.gpp)
         self.add_widget(self.cpp)
@@ -64,8 +73,12 @@ class ScheduleForm(MDBoxLayout):
         self.spacing = dp(8)
         self.app = app
         self.food_field = MDTextField(hint_text="Alimento (exacto)")
-        self.hopper_field = MDTextField(hint_text="Tolva (1-3)", input_filter="int", text="1")
-        self.grams_field = MDTextField(hint_text="Gramos", input_filter="float", text="50")
+        self.hopper_field = MDTextField(
+            hint_text="Tolva (1-3)", input_filter="int", text="1"
+        )
+        self.grams_field = MDTextField(
+            hint_text="Gramos", input_filter="float", text="50"
+        )
         self.datetime_field = MDTextField(
             hint_text="Fecha y hora (YYYY-MM-DD HH:MM)",
             text=datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -80,18 +93,56 @@ class AppMain(MDApp):
     selected_food = None
     selected_food_name = None
     unit = "gramos"
-    bt_status_text = "No conectado"
+    bt_status_text = StringProperty("No conectado")
 
     def build(self):
         self.title = "Dispensador Inteligente"
         self.theme_cls.primary_palette = "Blue"
         self.theme_cls.theme_style = "Light"
 
-        self.db = DB()
-        self.bt = get_bluetooth()
-        self.scheduler = SchedulerEngine(self.db, self._send_schedule)
-        self.scheduler.start()
+        # --- Inicializar DB ---
+        try:
+            self.db = DB()
+        except Exception as e:
+            print("ERROR iniciando DB:", e)
+            traceback.print_exc()
+            # Si la base falla no podemos continuar
+            raise
 
+        # --- Inicializar Bluetooth ---
+        try:
+            self.bt = get_bluetooth()
+        except Exception as e:
+            print("ERROR iniciando Bluetooth:", e)
+            traceback.print_exc()
+
+            # Creamos un stub para que la app no truene y puedas probar UI
+            class DummyBT:
+                def is_connected(self):
+                    return False
+
+                def list_paired(self):
+                    return []
+
+                def connect(self, mac):
+                    return False, "Bluetooth no disponible"
+
+                def send(self, cmd):
+                    return False, "Bluetooth no disponible"
+
+            self.bt = DummyBT()
+            self.bt_status_text = "BT no disponible"
+
+        # --- Inicializar Scheduler ---
+        try:
+            self.scheduler = SchedulerEngine(self.db, self._send_schedule)
+            self.scheduler.start()
+        except Exception as e:
+            print("ERROR iniciando Scheduler:", e)
+            traceback.print_exc()
+            self.scheduler = None
+
+        # --- Cargar interfaz ---
         self.root = Builder.load_string(KV)
         self.sm = self.root  # MDScreenManager
 
@@ -126,12 +177,21 @@ class AppMain(MDApp):
                 return
             menu_items = []
             for fid, name, gpp, cpp in foods:
-                menu_items.append({
-                    "text": name,
-                    "on_release": (lambda i=fid, n=name: (self._select_food(i, n), self.food_menu.dismiss()))
-                })
+                menu_items.append(
+                    {
+                        "text": name,
+                        "on_release": (
+                            lambda i=fid, n=name: (
+                                self._select_food(i, n),
+                                self.food_menu.dismiss(),
+                            )
+                        ),
+                    }
+                )
             caller = self._dispenser().ids.food_btn
-            self.food_menu = MDDropdownMenu(caller=caller, items=menu_items, width_mult=4)
+            self.food_menu = MDDropdownMenu(
+                caller=caller, items=menu_items, width_mult=4
+            )
             self.food_menu.open()
         except Exception as e:
             traceback.print_exc()
@@ -200,7 +260,11 @@ class AppMain(MDApp):
             hopper = self._current_hopper()
             _, name, gpp, cpp = self.selected_food
 
-            grams = amount if self.unit == "gramos" else self.db.grams_for_calories(amount, gpp, cpp)
+            grams = (
+                amount
+                if self.unit == "gramos"
+                else self.db.grams_for_calories(amount, gpp, cpp)
+            )
             grams = max(0, grams)
 
             cmd = f"DISPENSE:{hopper}:{int(round(grams))}"
@@ -233,11 +297,12 @@ class AppMain(MDApp):
             for name, mac in devices:
                 item = MDListItem(
                     headline_text=f"{name}  [{mac}]",
-                    on_release=lambda x=None, m=mac: self._connect_to(m)
+                    on_release=lambda x=None, m=mac: self._connect_to(m),
                 )
                 lst.add_widget(item)
         except Exception as e:
             traceback.print_exc()
+            self.bt_status_text = "Error buscando dispositivos"
             _toast(f"Error al buscar BT: {e}")
 
     def _connect_to(self, mac):
@@ -247,6 +312,7 @@ class AppMain(MDApp):
             _toast(msg)
         except Exception as e:
             traceback.print_exc()
+            self.bt_status_text = "Error al conectar"
             _toast(f"No se pudo conectar: {e}")
 
     # ---------------- Alimentos (CRUD) ----------------
@@ -257,7 +323,7 @@ class AppMain(MDApp):
         rv.data = [
             {
                 "headline_text": f"{name} · {gpp:g} g → {cpp:g} kcal",
-                "on_release": (lambda x=None, i=fid: self.open_food_form(i))
+                "on_release": (lambda x=None, i=fid: self.open_food_form(i)),
             }
             for fid, name, gpp, cpp in foods
         ]
@@ -270,10 +336,18 @@ class AppMain(MDApp):
             type="custom",
             content_cls=form,
             buttons=[
-                MDButton(MDButtonText(text="Cancelar"), style="text",
-                         on_release=lambda *_: self.food_dialog.dismiss()),
-                MDButton(MDButtonText(text="Guardar"), style="elevated",
-                         on_release=lambda *_: self._save_food(form, food[0] if food else None)),
+                MDButton(
+                    MDButtonText(text="Cancelar"),
+                    style="text",
+                    on_release=lambda *_: self.food_dialog.dismiss(),
+                ),
+                MDButton(
+                    MDButtonText(text="Guardar"),
+                    style="elevated",
+                    on_release=lambda *_: self._save_food(
+                        form, food[0] if food else None
+                    ),
+                ),
             ],
         )
         self.food_dialog.open()
@@ -302,10 +376,12 @@ class AppMain(MDApp):
         for sched_id, name, hopper, grams, when_ts, executed, food_id in rows:
             dt = datetime.fromtimestamp(when_ts).strftime("%Y-%m-%d %H:%M")
             status = "✓ ejecutado" if executed else "⏳ pendiente"
-            rv.data.append({
-                "headline_text": f"{name} · {grams:.0f} g (Tolva {hopper})",
-                "supporting_text": f"{dt}  —  {status}",
-            })
+            rv.data.append(
+                {
+                    "headline_text": f"{name} · {grams:.0f} g (Tolva {hopper})",
+                    "supporting_text": f"{dt}  —  {status}",
+                }
+            )
 
     def open_schedule_form(self):
         form = ScheduleForm(self)
@@ -314,10 +390,16 @@ class AppMain(MDApp):
             type="custom",
             content_cls=form,
             buttons=[
-                MDButton(MDButtonText(text="Cancelar"), style="text",
-                         on_release=lambda *_: self.sched_dialog.dismiss()),
-                MDButton(MDButtonText(text="Programar"), style="elevated",
-                         on_release=lambda *_: self._save_schedule(form)),
+                MDButton(
+                    MDButtonText(text="Cancelar"),
+                    style="text",
+                    on_release=lambda *_: self.sched_dialog.dismiss(),
+                ),
+                MDButton(
+                    MDButtonText(text="Programar"),
+                    style="elevated",
+                    on_release=lambda *_: self._save_schedule(form),
+                ),
             ],
         )
         self.sched_dialog.open()
@@ -327,7 +409,9 @@ class AppMain(MDApp):
             food_name = form.food_field.text.strip()
             hopper = int(form.hopper_field.text.strip())
             grams = float(form.grams_field.text.strip())
-            dt = datetime.strptime(form.datetime_field.text.strip(), "%Y-%m-%d %H:%M")
+            dt = datetime.strptime(
+                form.datetime_field.text.strip(), "%Y-%m-%d %H:%M"
+            )
             food = self.db.food_by_name(food_name)
             if not food:
                 raise ValueError("Alimento no encontrado (verifique nombre exacto)")
@@ -362,10 +446,12 @@ class AppMain(MDApp):
         rv.data = []
         for name, hopper, grams, kcal, ts in items:
             dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
-            rv.data.append({
-                "headline_text": f"{name} · {grams:.0f} g  (≈ {kcal:.0f} kcal)",
-                "supporting_text": f"{dt}  —  Tolva {hopper}",
-            })
+            rv.data.append(
+                {
+                    "headline_text": f"{name} · {grams:.0f} g  (≈ {kcal:.0f} kcal)",
+                    "supporting_text": f"{dt}  —  Tolva {hopper}",
+                }
+            )
 
 
 if __name__ == "__main__":
