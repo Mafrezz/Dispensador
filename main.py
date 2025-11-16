@@ -1,10 +1,15 @@
-# --- Simulación "teléfono" que SÍ cabe en tu pantalla ---
+# --- Simulación "teléfono" SOLO en PC ---
 import os
-os.environ["KIVY_METRICS_DENSITY"] = "2.0"   # escala moderada; ajusta 2.4–3.0 si quieres
-# os.environ["KIVY_DPI"] = "420"            # opcional
+from kivy.utils import platform
 
-from kivy.core.window import Window
-Window.size = (360, 750)                    # alto que cabe en tu pantalla de PC
+if platform != "android":
+    # Solo en Windows/Linux de escritorio
+    os.environ["KIVY_METRICS_DENSITY"] = "2.0"   # escala moderada
+    from kivy.core.window import Window
+    Window.size = (360, 750)                     # para que se vea como teléfono
+else:
+    # En Android NO tocamos Window ni density
+    from kivy.core.window import Window
 # --- fin simulación ---
 
 from kivy.config import Config
