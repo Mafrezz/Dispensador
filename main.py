@@ -1,17 +1,3 @@
-# --- Simulación "teléfono" SOLO en PC ---
-import os
-from kivy.utils import platform
-
-if platform != "android":
-    # Solo en Windows/Linux de escritorio
-    os.environ["KIVY_METRICS_DENSITY"] = "2.0"   # escala moderada
-    from kivy.core.window import Window
-    Window.size = (360, 750)                     # para que se vea como teléfono
-else:
-    # En Android NO tocamos Window ni density
-    from kivy.core.window import Window
-# --- fin simulación ---
-
 from kivy.config import Config
 Config.set('kivy', 'log_level', 'info')
 
